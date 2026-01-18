@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """
-Telegram Scam Bot - Admin Panel Version
-With message logging and centralized IBAN
+Telegram Scam Bot - Render Compatible Version
+Using python-telegram-bot 13.15
 """
 
 import os
+import sys
 import logging
-import json
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 
 # ========== CONFIGURATION ==========
-# Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -22,88 +20,191 @@ logger = logging.getLogger(__name__)
 # Get bot token from environment
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# ADMIN ID - PUT YOUR TELEGRAM USER ID HERE (get it from @userinfobot)
-ADMIN_ID = 6669804585  # REPLACE WITH YOUR ACTUAL TELEGRAM ID!!!
+# Debug info
+logger.info("=" * 50)
+logger.info("Starting bot deployment check...")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Current directory: {os.getcwd()}")
 
-# IBAN & Payment details (centralized)
-PAYMENT_DETAILS = {
-    'iban': 'DE48202208000040574891',
-    'name': 'AYMEN NOUFA',
-    'contact': '@de9avrai',
-    'crypto_contact': '@de9avrai',
-    'methods_contact': '@de9avrai'
-}
+# List all environment variables (for debugging)
+for key, value in os.environ.items():
+    if 'BOT' in key.upper() or 'TOKEN' in key.upper() or 'RENDER' in key.upper():
+        logger.info(f"ENV: {key} = {value}")
 
-# Storage for user messages (in production use a database)
-user_messages = {}
-
-# ========== ADMIN PANEL FUNCTIONS ==========
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show admin panel only to admin"""
-    user_id = update.effective_user.id
+if not BOT_TOKEN:
+    logger.error("=" * 50)
+    logger.error("ERROR: BOT_TOKEN not found in environment variables!")
+    logger.error("=" * 50)
+    logger.error("On Render dashboard:")
+    logger.error("1. Go to your service")
+    logger.error("2. Click 'Environment' tab")
+    logger.error("3. Click 'Add Environment Variable'")
+    logger.error("4. Add: Key=BOT_TOKEN, Value=your_token")
+    logger.error("5. Click 'Save Changes'")
+    logger.error("6. Click 'Manual Deploy'")
+    logger.error("=" * 50)
     
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Access denied. Fuck off.")
-        return
+    # Try to get any token from other env vars
+    possible_token = None
+    for key, value in os.environ.items():
+        if 'TOKEN' in key.upper() and len(value) > 20:
+            possible_token = value
+            logger.info(f"Found possible token in {key}")
+            break
     
+    if possible_token:
+        logger.info(f"Using token from alternate env var: {possible_token[:10]}...")
+        BOT_TOKEN = possible_token
+    else:
+        logger.error("No token found. Exiting.")
+        sys.exit(1)
+
+logger.info(f"✅ Bot token found: {BOT_TOKEN[:10]}...")
+
+# ========== BOT CODE ==========
+def start(update: Update, context: CallbackContext):
+    """Send welcome message with 3 options"""
     keyboard = [
-        [InlineKeyboardButton("📊 View Statistics", callback_data='admin_stats')],
-        [InlineKeyboardButton("📨 View User Messages", callback_data='admin_messages')],
-        [InlineKeyboardButton("📢 Broadcast Message", callback_data='admin_broadcast')],
-        [InlineKeyboardButton("🔄 Update IBAN/Payment", callback_data='admin_update')],
-        [InlineKeyboardButton("🚫 Clear All Data", callback_data='admin_clear')]
+        [InlineKeyboardButton("💳 Cart Visa", callback_data='visa')],
+        [InlineKeyboardButton("💰 Transfers", callback_data='transfer')],
+        [InlineKeyboardButton("🛠️ Method", callback_data='method')]
     ]
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        f"🛡️ *ADMIN PANEL*\n\n"
-        f"Welcome back, Alpha.\n\n"
-        f"*Current IBAN:* `{PAYMENT_DETAILS['iban']}`\n"
-        f"*Account Name:* `{PAYMENT_DETAILS['name']}`\n"
-        f"*Contact:* {PAYMENT_DETAILS['contact']}\n\n"
-        f"*Total Users:* {len(user_messages)}\n"
-        f"*Total Messages:* {sum(len(msgs) for msgs in user_messages.values())}",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+    update.message.reply_text(
+        "Bonjour ami, tu veux acheter une carte de crédit, effectuer des virements ou utiliser d'autres méthodes ?",
+        reply_markup=reply_markup
     )
 
-async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle admin panel buttons"""
+def button(update: Update, context: CallbackContext):
+    """Handle all button presses"""
     query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    if user_id != ADMIN_ID:
-        await query.edit_message_text("❌ You're not the admin, bitch.")
-        return
+    query.answer()
     
     data = query.data
     
-    if data == 'admin_stats':
-        total_users = len(user_messages)
-        total_messages = sum(len(msgs) for msgs in user_messages.values())
-        
-        stats_text = f"📊 *SCAM BOT STATISTICS*\n\n"
-        stats_text += f"• Total Users: `{total_users}`\n"
-        stats_text += f"• Total Messages: `{total_messages}`\n"
-        stats_text += f"• Active Today: `{count_active_today()}`\n\n"
-        stats_text += f"*Payment Details:*\n"
-        stats_text += f"IBAN: `{PAYMENT_DETAILS['iban']}`\n"
-        stats_text += f"Name: `{PAYMENT_DETAILS['name']}`\n"
-        
-        await query.edit_message_text(stats_text, parse_mode='Markdown')
+    # VISA OPTION
+    if data == 'visa':
+        keyboard = [
+            [InlineKeyboardButton("💳 400 Euro pour 40", callback_data='400')],
+            [InlineKeyboardButton("💳 500 Euro pour 50", callback_data='500')],
+            [InlineKeyboardButton("💳 600 Euro pour 60", callback_data='600')],
+            [InlineKeyboardButton("💳 700 Euro pour 70", callback_data='700')],
+            [InlineKeyboardButton("💳 800 Euro pour 80", callback_data='800')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Quel montant souhaitez-vous que la carte Visa contienne en argent ?",
+            reply_markup=reply_markup
+        )
     
-    elif data == 'admin_messages':
-        if not user_messages:
-            await query.edit_message_text("📭 No messages received yet.")
-            return
-        
-        messages_text = "📨 *RECENT USER MESSAGES*\n\n"
-        for user_id, messages in list(user_messages.items())[-10:]:  # Last 10 users
-            user_info = await context.bot.get_chat(user_id)
-            username = f"@{user_info.username}" if user_info.username else f"User ID: {user_id}"
-            messages_text += f"👤 *{username}* (Messages: {len(messages)})\n"
+    # VISA AMOUNTS - Show payment details
+    elif data in ['400', '500', '600', '700', '800']:
+        payment_text = """Payez ici Virement Instant Veuillez 
+
+IBAN: DE48202208000040574891 
+
+NOM ET PRENOM (REQUIS): AYMEN NOUFA
+
+Veuillez envoyer une capture d'écran une fois le transfert effectué. Merci.
+
+En cas de problème, veuillez contacter @de9avrai."""
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text=payment_text
+        )
+    
+    # TRANSFERS OPTION
+    elif data == 'transfer':
+        keyboard = [
+            [InlineKeyboardButton("Crypto", callback_data='crypto')],
+            [InlineKeyboardButton("Virement", callback_data='virement')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Préférez-vous les transferts en cryptomonnaie ou les transferts Virement ?",
+            reply_markup=reply_markup
+        )
+    
+    # CRYPTO TRANSFER
+    elif data == 'crypto':
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Rendez-vous sur @de9avrai si vous souhaitez obtenir l'adresse crypto pour effectuer le paiement."
+        )
+    
+    # BANK TRANSFER
+    elif data == 'virement':
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Pour tout virement bancaire, veuillez contacter @De9avrai."
+        )
+    
+    # METHOD OPTION
+    elif data == 'method':
+        keyboard = [
+            [InlineKeyboardButton("Fnac V2", callback_data='fnac')],
+            [InlineKeyboardButton("Booking", callback_data='booking')],
+            [InlineKeyboardButton("BackMarket", callback_data='backmarket')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Choisissez une méthode :",
+            reply_markup=reply_markup
+        )
+    
+    # METHOD SUB-OPTIONS
+    elif data in ['fnac', 'booking', 'backmarket']:
+        context.bot.edit_message_text(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text="Si vous souhaitez acheter la méthode, rendez-vous sur @de9avrai."
+        )
+
+def error(update: Update, context: CallbackContext):
+    """Log errors"""
+    logger.error(f"Update {update} caused error {context.error}")
+
+def main():
+    """Start the bot"""
+    logger.info("=" * 50)
+    logger.info("🚀 Starting scam bot on Render...")
+    logger.info(f"✅ Using token: {BOT_TOKEN[:10]}...")
+    logger.info("=" * 50)
+    
+    # Create updater with explicit parameters for version 13.15
+    updater = Updater(BOT_TOKEN, use_context=True)
+    
+    # Get dispatcher
+    dp = updater.dispatcher
+    
+    # Add handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CallbackQueryHandler(button))
+    dp.add_error_handler(error)
+    
+    # Start bot
+    logger.info("✅ Bot is running! Ready to scam!")
+    logger.info("💸 Waiting for victims...")
+    logger.info("⏹️  Press Ctrl+C to stop (not applicable on Render)")
+    
+    # Start polling
+    updater.start_polling()
+    
+    # Run the bot until stopped
+    updater.idle()
+
+if __name__ == '__main__':
+    main()            messages_text += f"👤 *{username}* (Messages: {len(messages)})\n"
             for msg in messages[-3:]:  # Last 3 messages per user
                 messages_text += f"   └ {msg}\n"
             messages_text += "\n"
